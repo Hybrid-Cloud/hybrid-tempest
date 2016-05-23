@@ -24,7 +24,6 @@ from tempest.lib.services.identity.v2 import token_client as v2_client
 from tempest.lib.services.identity.v3 import token_client as v3_client
 from tempest.tests.lib import base
 from tempest.tests.lib import fake_credentials
-from tempest.tests.lib import fake_http
 from tempest.tests.lib import fake_identity
 
 
@@ -42,7 +41,6 @@ class BaseAuthTestsSetUp(base.TestCase):
 
     def setUp(self):
         super(BaseAuthTestsSetUp, self).setUp()
-        self.fake_http = fake_http.fake_httplib2(return_type=200)
         self.stubs.Set(auth, 'get_credentials', fake_get_credentials)
         self.auth_provider = self._auth(self.credentials,
                                         fake_identity.FAKE_AUTH_URL)
@@ -251,7 +249,7 @@ class TestKeystoneV2AuthProvider(BaseAuthTestsSetUp):
         """Test empty alternate auth data with no effect
 
         Assert that when alt_part is defined, no auth_data is provided,
-        and the the corresponding original request element was not going to
+        and the corresponding original request element was not going to
         be changed anyways, and exception is raised
         """
         filters = {
@@ -382,6 +380,31 @@ class TestKeystoneV2AuthProvider(BaseAuthTestsSetUp):
         expected = 'http://fake_url/'
         self._test_base_url_helper(expected, self.filters)
 
+    def test_base_url_with_unversioned_endpoint(self):
+        auth_data = {
+            'serviceCatalog': [
+                {
+                    'type': 'identity',
+                    'endpoints': [
+                        {
+                            'region': 'FakeRegion',
+                            'publicURL': 'http://fake_url'
+                        }
+                    ]
+                }
+            ]
+        }
+
+        filters = {
+            'service': 'identity',
+            'endpoint_type': 'publicURL',
+            'region': 'FakeRegion',
+            'api_version': 'v2.0'
+        }
+
+        expected = 'http://fake_url/v2.0'
+        self._test_base_url_helper(expected, filters, ('token', auth_data))
+
     def test_token_not_expired(self):
         expiry_data = datetime.datetime.utcnow() + datetime.timedelta(days=1)
         self._verify_expiry(expiry_data=expiry_data, should_be_expired=False)
@@ -478,3 +501,132 @@ class TestKeystoneV3AuthProvider(TestKeystoneV2AuthProvider):
         expected = self._get_result_url_from_endpoint(
             self._endpoints[0]['endpoints'][2])
         self._test_base_url_helper(expected, self.filters)
+
+    # Overwrites v2 test
+    def test_base_url_with_unversioned_endpoint(self):
+        auth_data = {
+            'catalog': [
+                {
+                    'type': 'identity',
+                    'endpoints': [
+                        {
+                            'region': 'FakeRegion',
+                            'url': 'http://fake_url',
+                            'interface': 'public'
+                        }
+                    ]
+                }
+            ]
+        }
+
+        filters = {
+            'service': 'identity',
+            'endpoint_type': 'publicURL',
+            'region': 'FakeRegion',
+            'api_version': 'v3'
+        }
+
+        expected = 'http://fake_url/v3'
+        self._test_base_url_helper(expected, filters, ('token', auth_data))
+
+
+class TestKeystoneV3Credentials(base.TestCase):
+    def testSetAttrUserDomain(self):
+        creds = auth.KeystoneV3Credentials()
+        creds.user_domain_name = 'user_domain'
+        creds.domain_name = 'domain'
+        self.assertEqual('user_domain', creds.user_domain_name)
+        creds = auth.KeystoneV3Credentials()
+        creds.domain_name = 'domain'
+        creds.user_domain_name = 'user_domain'
+        self.assertEqual('user_domain', creds.user_domain_name)
+
+    def testSetAttrProjectDomain(self):
+        creds = auth.KeystoneV3Credentials()
+        creds.project_domain_name = 'project_domain'
+        creds.domain_name = 'domain'
+        self.assertEqual('project_domain', creds.user_domain_name)
+        creds = auth.KeystoneV3Credentials()
+        creds.domain_name = 'domain'
+        creds.project_domain_name = 'project_domain'
+        self.assertEqual('project_domain', creds.project_domain_name)
+
+    def testProjectTenantNoCollision(self):
+        creds = auth.KeystoneV3Credentials(tenant_id='tenant')
+        self.assertEqual('tenant', creds.project_id)
+        creds = auth.KeystoneV3Credentials(project_id='project')
+        self.assertEqual('project', creds.tenant_id)
+        creds = auth.KeystoneV3Credentials(tenant_name='tenant')
+        self.assertEqual('tenant', creds.project_name)
+        creds = auth.KeystoneV3Credentials(project_name='project')
+        self.assertEqual('project', creds.tenant_name)
+
+    def testProjectTenantCollision(self):
+        attrs = {'tenant_id': 'tenant', 'project_id': 'project'}
+        self.assertRaises(
+            exceptions.InvalidCredentials, auth.KeystoneV3Credentials, **attrs)
+        attrs = {'tenant_name': 'tenant', 'project_name': 'project'}
+        self.assertRaises(
+            exceptions.InvalidCredentials, auth.KeystoneV3Credentials, **attrs)
+
+
+class TestReplaceVersion(base.TestCase):
+    def test_version_no_trailing_path(self):
+        self.assertEqual(
+            'http://localhost:35357/v2.0',
+            auth.replace_version('http://localhost:35357/v3', 'v2.0'))
+
+    def test_version_no_trailing_path_solidus(self):
+        self.assertEqual(
+            'http://localhost:35357/v2.0/',
+            auth.replace_version('http://localhost:35357/v3/', 'v2.0'))
+
+    def test_version_trailing_path(self):
+        self.assertEqual(
+            'http://localhost:35357/v2.0/uuid',
+            auth.replace_version('http://localhost:35357/v3/uuid', 'v2.0'))
+
+    def test_version_trailing_path_solidus(self):
+        self.assertEqual(
+            'http://localhost:35357/v2.0/uuid/',
+            auth.replace_version('http://localhost:35357/v3/uuid/', 'v2.0'))
+
+    def test_no_version_base(self):
+        self.assertEqual(
+            'http://localhost:35357/v2.0',
+            auth.replace_version('http://localhost:35357', 'v2.0'))
+
+    def test_no_version_base_solidus(self):
+        self.assertEqual(
+            'http://localhost:35357/v2.0',
+            auth.replace_version('http://localhost:35357/', 'v2.0'))
+
+    def test_no_version_path(self):
+        self.assertEqual(
+            'http://localhost/identity/v2.0',
+            auth.replace_version('http://localhost/identity', 'v2.0'))
+
+    def test_no_version_path_solidus(self):
+        self.assertEqual(
+            'http://localhost/identity/v2.0',
+            auth.replace_version('http://localhost/identity/', 'v2.0'))
+
+    def test_path_version(self):
+        self.assertEqual(
+            'http://localhost/identity/v2.0',
+            auth.replace_version('http://localhost/identity/v3', 'v2.0'))
+
+    def test_path_version_solidus(self):
+        self.assertEqual(
+            'http://localhost/identity/v2.0/',
+            auth.replace_version('http://localhost/identity/v3/', 'v2.0'))
+
+    def test_path_version_trailing_path(self):
+        self.assertEqual(
+            'http://localhost/identity/v2.0/uuid',
+            auth.replace_version('http://localhost/identity/v3/uuid', 'v2.0'))
+
+    def test_path_version_trailing_path_solidus(self):
+        self.assertEqual(
+            'http://localhost/identity/v2.0/uuid/',
+            auth.replace_version('http://localhost/identity/v3/uuid/', 'v2.0'))

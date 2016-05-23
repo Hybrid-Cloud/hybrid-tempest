@@ -180,6 +180,19 @@ def is_extension_enabled(extension_name, service):
     return False
 
 
+def is_scheduler_filter_enabled(filter_name):
+    """Check the list of enabled compute scheduler filters from config. """
+
+    filters = CONF.compute_feature_enabled.scheduler_available_filters
+    if len(filters) == 0:
+        return False
+    if 'all' in filters:
+        return True
+    if filter_name in filters:
+        return True
+    return False
+
+
 at_exit_set = set()
 
 
@@ -235,6 +248,9 @@ class BaseTestCase(testtools.testcase.WithAttributes,
 
     # Client manager class to use in this test case.
     client_manager = clients.Manager
+
+    # A way to adjust slow test classes
+    TIMEOUT_SCALING_FACTOR = 1
 
     @classmethod
     def setUpClass(cls):
@@ -406,7 +422,7 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         at_exit_set.add(self.__class__)
         test_timeout = os.environ.get('OS_TEST_TIMEOUT', 0)
         try:
-            test_timeout = int(test_timeout)
+            test_timeout = int(test_timeout) * self.TIMEOUT_SCALING_FACTOR
         except ValueError:
             test_timeout = 0
         if test_timeout > 0:
@@ -445,9 +461,9 @@ class BaseTestCase(testtools.testcase.WithAttributes,
             domains_client = None
         else:
             client = self.os_admin.identity_v3_client
-            project_client = self.os_adm.projects_client
             users_client = self.os_admin.users_v3_client
-            roles_client = None
+            project_client = self.os_admin.projects_client
+            roles_client = self.os_admin.roles_v3_client
             domains_client = self.os_admin.domains_client
 
         try:
@@ -595,13 +611,25 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                 'dhcp': dhcp}
 
     @classmethod
-    def get_tenant_network(cls):
+    def get_tenant_network(cls, credentials_type='primary'):
         """Get the network to be used in testing
+
+        :param credentials_type: The type of credentials for which to get the
+                                 tenant network
 
         :return: network dict including 'id' and 'name'
         """
+        # Get a manager for the given credentials_type, but at least
+        # always fall back on getting the manager for primary credentials
+        if isinstance(credentials_type, six.string_types):
+            manager = cls.get_client_manager(credential_type=credentials_type)
+        elif isinstance(credentials_type, list):
+            manager = cls.get_client_manager(roles=credentials_type[1:])
+        else:
+            manager = cls.get_client_manager()
+
         # Make sure cred_provider exists and get a network client
-        networks_client = cls.get_client_manager().compute_networks_client
+        networks_client = manager.compute_networks_client
         cred_provider = cls._get_credentials_provider()
         # In case of nova network, isolated tenants are not able to list the
         # network configured in fixed_network_name, even if they can use it

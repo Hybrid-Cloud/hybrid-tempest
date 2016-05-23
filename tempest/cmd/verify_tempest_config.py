@@ -15,7 +15,6 @@
 #    under the License.
 
 import argparse
-import httplib2
 import os
 import sys
 import traceback
@@ -29,6 +28,7 @@ from six.moves.urllib import parse as urlparse
 from tempest import clients
 from tempest.common import credentials_factory as credentials
 from tempest import config
+import tempest.lib.common.http
 
 
 CONF = config.CONF
@@ -91,13 +91,21 @@ def _get_api_versions(os, service):
     }
     client_dict[service].skip_path()
     endpoint = _get_unversioned_endpoint(client_dict[service].base_url)
-    dscv = CONF.identity.disable_ssl_certificate_validation
-    ca_certs = CONF.identity.ca_certificates_file
-    raw_http = httplib2.Http(disable_ssl_certificate_validation=dscv,
-                             ca_certs=ca_certs)
-    __, body = raw_http.request(endpoint, 'GET')
+
+    http = tempest.lib.common.http.ClosingHttp(
+        CONF.identity.disable_ssl_certificate_validation,
+        CONF.identity.ca_certificates_file)
+
+    __, body = http.request(endpoint, 'GET')
     client_dict[service].reset_path()
-    body = json.loads(body)
+    try:
+        body = json.loads(body)
+    except ValueError:
+        LOG.error(
+            'Failed to get a JSON response from unversioned endpoint %s '
+            '(versioned endpoint was %s). Response is:\n%s',
+            endpoint, client_dict[service].base_url, body[:100])
+        raise
     if service == 'keystone':
         versions = map(lambda x: x['id'], body['versions']['values'])
     else:
@@ -354,8 +362,6 @@ def main(opts=None):
     outfile = sys.stdout
     if update:
         conf_file = _get_config_file()
-        if opts.output:
-            outfile = open(opts.output, 'w+')
         CONF_PARSER = moves.configparser.SafeConfigParser()
         CONF_PARSER.optionxform = str
         CONF_PARSER.readfp(conf_file)
@@ -378,8 +384,9 @@ def main(opts=None):
         display_results(results, update, replace)
         if update:
             conf_file.close()
-            CONF_PARSER.write(outfile)
-        outfile.close()
+            if opts.output:
+                with open(opts.output, 'w+') as outfile:
+                    CONF_PARSER.write(outfile)
     finally:
         icreds.clear_creds()
 

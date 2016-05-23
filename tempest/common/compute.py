@@ -17,9 +17,9 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 
 from tempest.common import fixed_network
-from tempest.common import service_client
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common import rest_client
 from tempest.lib.common.utils import data_utils
 
 CONF = config.CONF
@@ -48,10 +48,6 @@ def create_test_server(clients, validatable=False, validation_resources=None,
     """
 
     # TODO(jlanoux) add support of wait_until PINGABLE/SSHABLE
-
-    name = name
-    flavor = flavor
-    image_id = image_id
 
     if name is None:
         name = data_utils.rand_name(__name__ + "-instance")
@@ -102,8 +98,8 @@ def create_test_server(clients, validatable=False, validation_resources=None,
         volume = volumes_client.create_volume(
             display_name=volume_name,
             imageRef=image_id)
-        volumes_client.wait_for_volume_status(volume['volume']['id'],
-                                              'available')
+        waiters.wait_for_volume_status(volumes_client,
+                                       volume['volume']['id'], 'available')
 
         bd_map_v2 = [{
             'uuid': volume['volume']['id'],
@@ -129,7 +125,7 @@ def create_test_server(clients, validatable=False, validation_resources=None,
         servers = \
             [s for s in body_servers['servers'] if s['name'].startswith(name)]
     else:
-        body = service_client.ResponseBody(body.response, body['server'])
+        body = rest_client.ResponseBody(body.response, body['server'])
         servers = [body]
 
     # The name of the method to associate a floating IP to as server is too
@@ -152,14 +148,12 @@ def create_test_server(clients, validatable=False, validation_resources=None,
 
             except Exception:
                 with excutils.save_and_reraise_exception():
-                    if ('preserve_server_on_error' not in kwargs
-                        or kwargs['preserve_server_on_error'] is False):
-                        for server in servers:
-                            try:
-                                clients.servers_client.delete_server(
-                                    server['id'])
-                            except Exception:
-                                LOG.exception('Deleting server %s failed'
-                                              % server['id'])
+                    for server in servers:
+                        try:
+                            clients.servers_client.delete_server(
+                                server['id'])
+                        except Exception:
+                            LOG.exception('Deleting server %s failed'
+                                          % server['id'])
 
     return body, servers

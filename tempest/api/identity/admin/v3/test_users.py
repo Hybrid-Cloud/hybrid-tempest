@@ -79,20 +79,15 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         self.users_client.update_user_password(
             user['id'], password=new_password,
             original_password=original_password)
-        # TODO(lbragstad): Sleeping after the response status has been checked
-        # and the body loaded as JSON allows requests to fail-fast. The sleep
-        # is necessary because keystone will err on the side of security and
-        # invalidate tokens within a small margin of error (within the same
-        # wall clock second) after a revocation event is issued (such as a
-        # password change). Remove this once keystone and Fernet support
-        # sub-second precision, see bug 1517697 for more details.
+        # NOTE(morganfainberg): Fernet tokens are not subsecond aware and
+        # Keystone should only be precise to the second. Sleep to ensure
+        # we are passing the second boundary.
         time.sleep(1)
         resp = self.token.auth(user_id=user['id'],
                                password=new_password).response
         subject_token = resp['x-subject-token']
         # Perform GET Token to verify and confirm password is updated
         token_details = self.client.show_token(subject_token)['token']
-        self.assertEqual(resp['x-subject-token'], subject_token)
         self.assertEqual(token_details['user']['id'], user['id'])
         self.assertEqual(token_details['user']['name'], u_name)
 
@@ -117,13 +112,13 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         # Delete the User at the end of this method
         self.addCleanup(self.users_client.delete_user, user_body['id'])
         # Creating Role
-        role_body = self.client.create_role(
+        role_body = self.roles_client.create_role(
             name=data_utils.rand_name('role'))['role']
         # Delete the Role at the end of this method
-        self.addCleanup(self.client.delete_role, role_body['id'])
+        self.addCleanup(self.roles_client.delete_role, role_body['id'])
 
         user = self.users_client.show_user(user_body['id'])['user']
-        role = self.client.show_role(role_body['id'])['role']
+        role = self.roles_client.show_role(role_body['id'])['role']
         for i in range(2):
             # Creating project so as to assign role
             project_body = self.projects_client.create_project(
@@ -135,9 +130,9 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
             self.addCleanup(
                 self.projects_client.delete_project, project_body['id'])
             # Assigning roles to user on project
-            self.client.assign_user_role_on_project(project['id'],
-                                                    user['id'],
-                                                    role['id'])
+            self.roles_client.assign_user_role_on_project(project['id'],
+                                                          user['id'],
+                                                          role['id'])
             assigned_project_ids.append(project['id'])
         body = self.users_client.list_user_projects(user['id'])['projects']
         for i in body:
