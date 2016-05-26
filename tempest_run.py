@@ -12,7 +12,7 @@ def createsuite(test_dir):
 
     discover=unittest.defaultTestLoader.discover(test_dir,pattern='test_*.py',top_level_dir=None)
     for test_case in discover:
-        #print test_case
+        print test_case
         testunit.addTests(test_case)
     print testunit
     return testunit 
