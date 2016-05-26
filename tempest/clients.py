@@ -177,7 +177,8 @@ from tempest.services.volume.v2.json.snapshots_client import \
     SnapshotsClient as SnapshotsV2Client
 from tempest.services.volume.v2.json.volumes_client import \
     VolumesClient as VolumesV2Client
-
+from tempest.services.conveyor.conveyor_client import \
+    BaseConveyorClient as ConveyorClient
 CONF = config.CONF
 LOG = logging.getLogger(__name__)
 
@@ -213,6 +214,7 @@ class Manager(manager.Manager):
         self._set_identity_clients()
         self._set_volume_clients()
         self._set_object_storage_clients()
+        self._set_conveyor_clients()
 
         self.baremetal_client = BaremetalClient(
             self.auth_provider,
@@ -604,3 +606,12 @@ class Manager(manager.Manager):
         self.account_client = AccountClient(self.auth_provider, **params)
         self.container_client = ContainerClient(self.auth_provider, **params)
         self.object_client = ObjectClient(self.auth_provider, **params)
+        
+    def _set_conveyor_clients(self):
+        params = {
+            'service': CONF.conveyor.catalog_type,
+            'region': CONF.conveyor.region or CONF.identity.region,
+            'endpoint_type': CONF.conveyor.endpoint_type
+        }
+        params.update(self.default_params)
+        self.conveyor_client =  ConveyorClient(self.auth_provider,**params)
