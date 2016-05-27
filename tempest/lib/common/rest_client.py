@@ -242,7 +242,7 @@ class RestClient(object):
                 details = pattern.format(read_code, expected_code)
                 raise exceptions.InvalidHttpSuccessCode(details)
 
-    def post(self, url, body, headers=None, extra_headers=False):
+    def post(self, url, body, headers={'Content-type':'application/json'}, extra_headers=False):
         """Send a HTTP POST request using keystone auth
 
         :param str url: the relative url to send the post request to
@@ -816,6 +816,7 @@ class RestClient(object):
         # code if it exists is something that we expect. This is explicitly
         # declared in the V3 API and so we should be able to export this in
         # the response schema. For now we'll ignore it.
+        return
         if resp.status in HTTP_SUCCESS + HTTP_REDIRECTION:
             cls.expected_success(schema['status_code'], resp.status)
 
