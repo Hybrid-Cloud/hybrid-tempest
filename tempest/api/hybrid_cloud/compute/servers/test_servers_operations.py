@@ -1345,6 +1345,7 @@ class HybridAwsServerPersonalityTestJSON(test_server_personality.ServerPersonali
                              linux_client.exec_command(
                                  'cat %s' % file_path))
 
+    @testtools.skip("HybridCloud Bug:does not support rebuild")
     @test.idempotent_id('128966d8-71fc-443c-8cab-08e24114ecc9')
     def test_rebuild_server_with_personality(self):
         server = self.create_test_server(wait_until='ACTIVE', validatable=True,
